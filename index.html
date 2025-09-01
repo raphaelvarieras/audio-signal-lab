@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Audio Signal Lab — Build · Record · Reconstruct</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    :root {
+      --bg: #0f1217;
+      --panel: #151a21;
+      --muted: #8ca0b3;
+      --text: #e8eef6;
+      --accent: #56b6c2;
+      --accent-2: #98c379;
+      --warn: #e5c07b;
+      --danger: #e06c75;
+      --border: #202634;
+      --card: #1b212b;
+      --shadow: 0 6px 24px rgba(0,0,0,.35);
+      --radius: 12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+    }
+    header {
+      padding: 20px clamp(16px, 6vw, 48px);
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    }
+    header h1 { margin: 0 0 6px 0; font-weight: 700; letter-spacing: 0.2px; }
+    header p { margin: 2px 0 0 0; color: var(--muted); max-width: 900px; }
+    main { padding: 20px clamp(16px, 6vw, 48px) 64px; display: grid; gap: 28px; }
+    section.panel {
+      background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: clamp(14px, 2.4vw, 24px);
+    }
+    section.panel h2 { margin: 0 0 12px 0; font-size: 20px; }
+    .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .controls { display: grid; gap: 14px; }
+    .grid {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; box-shadow: var(--shadow);
+    }
+    label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+    input[type="number"], input[type="text"], select {
+      background: #0e131a; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px;
+      font-size: 14px; outline: none;
+    }
+    input[type="range"] { width: 100%; }
+    button, .btn {
+      appearance: none; background: var(--accent); color: #081217; border: none; border-radius: 8px; padding: 10px 14px; font-weight: 700;
+      cursor: pointer; box-shadow: var(--shadow); letter-spacing: .2px;
+    }
+    button.secondary { background: #2c3544; color: var(--text); }
+    button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    button.warn { background: var(--warn); color: #19150b; }
+    button.danger { background: var(--danger); color: #211012; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .wave-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr auto; gap: 10px; align-items: center; }
+    .wave-row .mini { display: flex; gap: 6px; }
+    .muted { color: var(--muted); }
+    canvas.scope {
+      width: 100%; height: 180px; background: #0a0d12; border: 1px solid var(--border); border-radius: 8px;
+    }
+    .small { font-size: 12px; color: var(--muted); }
+    .inline { display: inline-block; }
+    .spacer { flex: 1; }
+    .mono { font-family: var(--mono); }
+    .pill { background: #24344a; color: #d2e6ff; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+    details > summary { cursor: pointer; }
+    a.link { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Audio Signal Lab</h1>
+  <p>Build an analog-like signal by combining waveforms, “record” it digitally with chosen sampling/bit depth and filters, then reconstruct it via DAC to hear and see the effects.</p>
+</header>
+
+<main>
+  <!-- Enable Audio -->
+  <section class="panel" id="gate">
+    <h2>Enable Audio</h2>
+    <div class="row">
+      <button id="enableAudio">Click to Enable Audio</button>
+      <span class="small">Browsers require a user gesture to start audio. Once enabled, you can play/stop in each step.</span>
+    </div>
+  </section>
+
+  <!-- Step 1: Build the signal -->
+  <section class="panel" id="step1">
+    <h2>Step 1 — Build the Signal</h2>
+
+    <div class="controls">
+      <div class="row">
+        <button id="addWave">+ Add waveform</button>
+        <span class="spacer"></span>
+        <button id="s1RenderPlay" class="secondary" disabled>Generate & Play</button>
+        <button id="s1Stop" class="ghost" disabled>Stop</button>
+        <span class="pill" id="ctxRate">Context: — Hz</span>
+      </div>
+
+      <div id="waves" class="grid"></div>
+
+      <details id="s1More">
+        <summary class="small">Advanced (preview duration, master gain)</summary>
+        <div class="grid">
+          <label>
+            Preview Duration (s)
+            <input type="number" id="previewDur" value="2.0" min="0.5" max="10" step="0.1">
+          </label>
+          <label>
+            Master Gain
+            <input type="range" id="masterGain" min="0" max="1" step="0.01" value="0.8">
+          </label>
+        </div>
+      </details>
+
+      <div class="grid">
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Oscilloscope</strong>
+            <span class="small muted">Time domain</span>
+          </div>
+          <canvas id="scope1" class="scope"></canvas>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Spectrum</strong>
+            <span class="small muted">Magnitude (dB)</span>
+          </div>
+          <canvas id="spec1" class="scope"></canvas>
+        </div>
+      </div>
+
+      <p class="small">
+        Notes: Square/triangle/saw are rendered band‑limited to avoid aliasing. Phases are respected via custom harmonic construction.
+      </p>
+    </div>
+  </section>
+
+  <!-- Step 2: Recording / ADC -->
+  <section class="panel" id="step2">
+    <h2>Step 2 — Recording / ADC Simulation</h2>
+
+    <div class="controls">
+      <div class="grid">
+        <label>
+          Recording Sample Rate (Hz)
+          <select id="recRate">
+            <option>8000</option>
+            <option>11025</option>
+            <option>16000</option>
+            <option>22050</option>
+            <option selected>44100</option>
+            <option>48000</option>
+            <option>96000</option>
+          </select>
+        </label>
+        <label>
+          Bit Depth
+          <select id="bitDepth">
+            <option>8</option>
+            <option selected>16</option>
+            <option>24</option>
+          </select>
+        </label>
+        <label>
+          Channels
+          <select id="channels">
+            <option selected>Mono</option>
+            <option>Stereo</option>
+          </select>
+        </label>
+        <label>
+          Duration to Simulate (s)
+          <input type="number" id="recDur" value="2.0" min="0.5" max="10" step="0.1">
+        </label>
+      </div>
+
+      <div class="grid">
+        <label>
+          Anti‑alias Filter
+          <select id="aaKind">
+            <option selected>None</option>
+            <option>Low‑pass</option>
+            <option>High‑pass</option>
+          </select>
+        </label>
+        <label>
+          Filter Cutoff (Hz)
+          <input type="number" id="aaCutoff" value="18000" min="20" max="40000" step="10">
+        </label>
+        <label>
+          Dither (TPDF)
+          <select id="dither">
+            <option selected>Off</option>
+            <option>On</option>
+          </select>
+        </label>
+        <label>
+          Compression (Bonus)
+          <select id="compression">
+            <option selected>None (Linear PCM)</option>
+            <option>μ‑law 8‑bit (G.711)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="recordSim" class="warn" disabled>Simulate Recording</button>
+        <button id="playRecorded" class="secondary" disabled>Play Recorded</button>
+        <button id="stopRecorded" class="ghost" disabled>Stop</button>
+        <span class="spacer"></span>
+        <button id="downloadWav" disabled>Download WAV</button>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <strong>Storage (uncompressed PCM)</strong>
+          <div class="small">One minute at your settings:</div>
+          <div id="size1min" class="mono" style="margin-top:6px;"></div>
+        </div>
+        <div class="card">
+          <strong>Quantization Metrics</strong>
+          <div class="small">Measured vs theoretical (full‑scale sine):</div>
+          <div id="snrBox" class="mono" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Recorded (quantized) — Oscilloscope</strong>
+            <span class="small muted">Time domain</span>
+          </div>
+          <canvas id="scope2" class="scope"></canvas>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Recorded — Quantization Error</strong>
+            <span class="small muted">x[n] − q[n]</span>
+          </div>
+          <canvas id="err2" class="scope"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Step 3: DAC / restitution -->
+  <section class="panel" id="step3">
+    <h2>Step 3 — Reconstruction / DAC Simulation</h2>
+
+    <div class="controls">
+      <div class="grid">
+        <label>
+          DAC Method
+          <select id="dacMethod">
+            <option selected>Zero‑order hold (sample‑and‑hold)</option>
+            <option>Linear interpolation</option>
+          </select>
+        </label>
+        <label>
+          Output Low‑pass (Hz, 0 = off)
+          <input type="number" id="dacLP" value="18000" min="0" max="40000" step="10">
+        </label>
+        <label>
+          Playback Gain
+          <input type="range" id="dacGain" min="0" max="1" step="0.01" value="0.8">
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="renderDAC" class="secondary" disabled>Render & Play DAC Output</button>
+        <button id="stopDAC" class="ghost" disabled>Stop</button>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Reconstructed — Oscilloscope</strong>
+            <span class="small muted">Time domain</span>
+          </div>
+          <canvas id="scope3" class="scope"></canvas>
+        </div>
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Reconstructed — Spectrum</strong>
+            <span class="small muted">Magnitude (dB)</span>
+          </div>
+          <canvas id="spec3" class="scope"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Tips & Teaching Notes</h2>
+    <ul class="small">
+      <li><strong>Nyquist / aliasing:</strong> Try a square wave with strong high‑frequency content, then reduce the recording sample rate or turn off anti‑alias low‑pass. You’ll hear/see aliasing.</li>
+      <li><strong>Bit depth & SNR:</strong> Compare 8‑bit vs 16‑bit with and without TPDF dither. The measured SNR will approach ~<span class="mono">6.02·N + 1.76 dB</span> for a full‑scale sine.</li>
+      <li><strong>μ‑law companding:</strong> Switch compression to <em>μ‑law 8‑bit</em> to hear higher resolution near 0 and coarser steps at peaks.</li>
+      <li><strong>DAC images:</strong> Use ZOH in Step 3 without output low‑pass to observe spectral “images”; then add the low‑pass to see their suppression.</li>
+    </ul>
+  </section>
+
+</main>
+
+<script>
+(() => {
+  // ---------- Utilities ----------
+  const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const dB = x => 20 * Math.log10(x);
+  const fmt = (x, digits=2) => Number.isFinite(x) ? x.toFixed(digits) : '—';
+
+  function bytesHuman(n) {
+    const u = ['B','KB','MB','GB'];
+    let i=0, v=n;
+    while (v >= 1024 && i < u.length-1) { v/=1024; i++; }
+    return `${v.toFixed(2)} ${u[i]}`;
+  }
+
+  // ---------- Global State ----------
+  let audioCtx = null;       // main realtime context (created on user gesture)
+  let mainOut = null;        // main gain to speakers
+  let analyser1 = null;      // analyser for Step 1 preview
+  let analyser3 = null;      // analyser for Step 3 output
+  let previewSrc = null;     // current Step 1 BufferSource
+  let previewBuf = null;
+  let recorded = null;       // { fs, bitDepth, ch, float, floatStereo?, quantFloat, errFloat, pcm, encoding }
+  let recordedSrc = null;    // BufferSource for Step 2 preview
+  let dacSrc = null;         // BufferSource for Step 3 playback
+  let dacGainNode = null;
+
+  const state = {
+    waveforms: [], // items: {id,type,amp,freq,phaseDeg, muted}
+    masterGain: 0.8,
+    previewDur: 2.0
+  };
+  let nextWaveId = 1;
+
+  // ---------- DOM ----------
+  const el = id => document.getElementById(id);
+
+  const ctxRate = el('ctxRate');
+  const wavesDiv = el('waves');
+  const addWaveBtn = el('addWave');
+  const enableAudioBtn = el('enableAudio');
+  const s1RenderPlay = el('s1RenderPlay');
+  const s1Stop = el('s1Stop');
+  const previewDurInput = el('previewDur');
+  const masterGainInput = el('masterGain');
+  const scope1 = el('scope1');
+  const spec1  = el('spec1');
+
+  const recRateSel = el('recRate');
+  const bitDepthSel = el('bitDepth');
+  const channelsSel = el('channels');
+  const recDurInput = el('recDur');
+  const aaKindSel = el('aaKind');
+  const aaCutoffInput = el('aaCutoff');
+  const ditherSel = el('dither');
+  const compressionSel = el('compression');
+  const recordSimBtn = el('recordSim');
+  const playRecordedBtn = el('playRecorded');
+  const stopRecordedBtn = el('stopRecorded');
+  const size1minBox = el('size1min');
+  const snrBox = el('snrBox');
+  const scope2 = el('scope2');
+  const err2   = el('err2');
+  const downloadWavBtn = el('downloadWav');
+
+  const dacMethodSel = el('dacMethod');
+  const dacLPInput   = el('dacLP');
+  const dacGainInput = el('dacGain');
+  const renderDACBtn = el('renderDAC');
+  const stopDACBtn   = el('stopDAC');
+  const scope3 = el('scope3');
+  const spec3  = el('spec3');
+
+  // ---------- Audio init ----------
+  enableAudioBtn.addEventListener('click', async () => {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      mainOut = audioCtx.createGain();
+      mainOut.gain.value = state.masterGain;
+      mainOut.connect(audioCtx.destination);
+
+      analyser1 = audioCtx.createAnalyser();
+      analyser1.fftSize = 4096;
+      analyser1.smoothingTimeConstant = 0.2;
+
+      analyser3 = audioCtx.createAnalyser();
+      analyser3.fftSize = 4096;
+      analyser3.smoothingTimeConstant = 0.2;
+
+      dacGainNode = audioCtx.createGain();
+      dacGainNode.gain.value = parseFloat(dacGainInput.value);
+      dacGainNode.connect(analyser3);
+      analyser3.connect(mainOut);
+
+      ctxRate.textContent = `Context: ${audioCtx.sampleRate} Hz`;
+      // enable buttons
+      s1RenderPlay.disabled = false;
+      s1Stop.disabled = false;
+      recordSimBtn.disabled = false;
+      playRecordedBtn.disabled = false;
+      stopRecordedBtn.disabled = false;
+      renderDACBtn.disabled = false;
+      stopDACBtn.disabled = false;
+      enableAudioBtn.disabled = true;
+    }
+  });
+
+  // ---------- Waveform UI ----------
+  addWaveBtn.addEventListener('click', () => {
+    addWave();
+    renderWaves();
+  });
+
+  function addWave(w = { type:'sine', amp:0.8, freq:440, phaseDeg:0, muted:false }) {
+    state.waveforms.push({ id: nextWaveId++, ...w });
+  }
+
+  function removeWave(id) {
+    state.waveforms = state.waveforms.filter(w => w.id !== id);
+    renderWaves();
+  }
+
+  function renderWaves() {
+    if (!state.waveforms.length) addWave({ type:'sine', amp:0.6, freq:440, phaseDeg:0 });
+    wavesDiv.innerHTML = '';
+    state.waveforms.forEach(w => {
+      const row = document.createElement('div');
+      row.className = 'card wave-row';
+      row.innerHTML = `
+        <div class="mini">
+          <label>
+            Shape
+            <select data-k="type" data-id="${w.id}">
+              <option ${w.type==='sine'?'selected':''}>sine</option>
+              <option ${w.type==='square'?'selected':''}>square</option>
+              <option ${w.type==='triangle'?'selected':''}>triangle</option>
+              <option ${w.type==='sawtooth'?'selected':''}>sawtooth</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Amplitude
+          <input type="number" step="0.01" min="0" max="1" value="${w.amp}" data-k="amp" data-id="${w.id}">
+        </label>
+        <label>
+          Frequency (Hz)
+          <input type="number" step="1" min="1" max="20000" value="${w.freq}" data-k="freq" data-id="${w.id}">
+        </label>
+        <label>
+          Phase (°)
+          <input type="number" step="1" min="0" max="360" value="${w.phaseDeg}" data-k="phaseDeg" data-id="${w.id}">
+        </label>
+        <div class="mini">
+          <button class="ghost" data-act="mute" data-id="${w.id}">${w.muted?'Unmute':'Mute'}</button>
+          <button class="danger" data-act="del" data-id="${w.id}">Delete</button>
+        </div>
+      `;
+      wavesDiv.appendChild(row);
+    });
+
+    // Attach handlers
+    wavesDiv.querySelectorAll('select, input').forEach(ctrl => {
+      ctrl.addEventListener('input', ev => {
+        const id = Number(ev.target.dataset.id);
+        const k = ev.target.dataset.k;
+        const w = state.waveforms.find(x => x.id === id);
+        if (!w) return;
+        if (k === 'amp' || k === 'freq' || k === 'phaseDeg') w[k] = parseFloat(ev.target.value);
+        else if (k === 'type') w.type = ev.target.value;
+        schedulePreview(false);
+        updateSizeBox();
+      });
+    });
+    wavesDiv.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        const id = Number(ev.target.dataset.id);
+        const act = ev.target.dataset.act;
+        const w = state.waveforms.find(x => x.id === id);
+        if (!w) return;
+        if (act === 'del') removeWave(id);
+        if (act === 'mute') { w.muted = !w.muted; renderWaves(); schedulePreview(false); }
+      });
+    });
+  }
+
+  previewDurInput.addEventListener('input', () => {
+    state.previewDur = parseFloat(previewDurInput.value);
+  });
+  masterGainInput.addEventListener('input', () => {
+    state.masterGain = parseFloat(masterGainInput.value);
+    if (mainOut) mainOut.gain.setTargetAtTime(state.masterGain, audioCtx.currentTime, 0.01);
+  });
+
+  // ---------- Step 1 render & play ----------
+  s1RenderPlay.addEventListener('click', async () => {
+    await generatePreviewAndPlay();
+  });
+  s1Stop.addEventListener('click', stopPreview);
+
+  async function generatePreviewAndPlay() {
+    if (!audioCtx) return;
+    stopPreview();
+
+    // render offline
+    previewBuf = await renderOfflineFromWaves({
+      duration: state.previewDur,
+      sampleRate: audioCtx.sampleRate,
+      waves: state.waveforms,
+      antiAliasMaxHarmonics: true // band-limit by Nyquist
+    });
+
+    // play/visualize
+    previewSrc = audioCtx.createBufferSource();
+    previewSrc.buffer = previewBuf;
+    previewSrc.loop = true;
+
+    const nodeGain = audioCtx.createGain();
+    nodeGain.gain.value = 1.0;
+
+    previewSrc.connect(nodeGain);
+    nodeGain.connect(analyser1);
+    analyser1.connect(mainOut);
+    previewSrc.start();
+
+    startDrawLoop();
+  }
+
+  function stopPreview() {
+    try { previewSrc && previewSrc.stop(); } catch {}
+    previewSrc && previewSrc.disconnect();
+    previewSrc = null;
+  }
+
+  // ---------- Step 2: Recording simulation ----------
+  // Update size box immediately on UI changes
+  [recRateSel, bitDepthSel, channelsSel].forEach(sel => sel.addEventListener('input', updateSizeBox));
+  updateSizeBox();
+
+  function updateSizeBox() {
+    const fs = parseInt(recRateSel.value, 10);
+    const bits = parseInt(bitDepthSel.value, 10);
+    const ch = (channelsSel.value === 'Mono') ? 1 : 2;
+    const perMinuteBytes = 60 * fs * (bits/8) * ch;
+    size1minBox.textContent = `${bytesHuman(perMinuteBytes)} / minute  (${ch} ch · ${fs.toLocaleString()} Hz · ${bits}-bit PCM)`;
+  }
+
+  recordSimBtn.addEventListener('click', async () => {
+    if (!audioCtx) return;
+    stopRecorded();
+
+    const duration = parseFloat(recDurInput.value);
+    const fs = parseInt(recRateSel.value, 10);
+    const bits = parseInt(bitDepthSel.value, 10);
+    const ch = (channelsSel.value === 'Mono') ? 1 : 2;
+    const aaKind = aaKindSel.value; // None | Low-pass | High-pass
+    const cutoff = parseFloat(aaCutoffInput.value);
+    const useDither = (ditherSel.value === 'On');
+    const compression = compressionSel.value; // None | μ-law 8-bit (G.711)
+
+    // Render "analog" at recording fs (already band-limited by PeriodicWave harmonics)
+    const analogBuf = await renderOfflineFromWaves({
+      duration, sampleRate: fs, waves: state.waveforms, antiAliasMaxHarmonics: true,
+      filter: (aaKind === 'None') ? null : { type: (aaKind === 'Low-pass') ? 'lowpass' : 'highpass', cutoff }
+    });
+    const x = analogBuf.getChannelData(0); // mono source
+    // Duplicate for stereo if needed (for WAV export)
+    const xR = (ch === 2) ? x.slice(0) : null;
+
+    // Quantize
+    const { qFloat, errFloat, pcm, encLabel, ulaw } = quantizeBuffer(x, { bits, dither: useDither, compression });
+
+    // Measured SNR
+    const snr = computeSNR(x, qFloat);
+    const theory = 6.02 * (compression.startsWith('μ') ? 8 : bits) + 1.76; // for full-scale sine
+    snrBox.innerHTML = `Measured SNR: <strong>${fmt(snr,1)} dB</strong><br/>Theoretical (~sine): <span class="mono">${fmt(theory,1)} dB</span>`;
+
+    recorded = {
+      fs, bitDepth: bits, ch, duration,
+      float: x, floatR: xR, quantFloat: qFloat, errFloat,
+      pcm, encoding: encLabel, ulaw
+    };
+
+    // Visualize recorded waveform + error on canvases
+    drawArrayToScope(scope2, recorded.quantFloat, fs);
+    drawArrayToScope(err2, recorded.errFloat, fs);
+
+    // Prepare a preview BufferSource at recording fs. WebAudio will resample to ctx fs.
+    if (audioCtx) {
+      recordedSrc = audioCtx.createBuffer(ch, x.length, fs);
+      if (ch === 1) recordedSrc.getChannelData(0).set(recorded.quantFloat);
+      else {
+        recordedSrc.getChannelData(0).set(recorded.quantFloat);
+        recordedSrc.getChannelData(1).set(recorded.quantFloat); // simple mono->stereo
+      }
+      // keep as BufferSource creator
+    }
+
+    // Enable WAV download
+    downloadWavBtn.disabled = false;
+  });
+
+  playRecordedBtn.addEventListener('click', () => {
+    if (!audioCtx || !recorded || !recordedSrc) return;
+    stopRecorded();
+    recordedSrc = audioCtx.createBufferSource();
+    const ch = recorded.ch;
+    recordedSrc.buffer = audioCtx.createBuffer(ch, recorded.quantFloat.length, recorded.fs);
+    if (ch === 1) {
+      recordedSrc.getBuffer && recordedSrc.getBuffer(); // no-op safeguard
+      recordedSrc.buffer.getChannelData(0).set(recorded.quantFloat);
+    } else {
+      recordedSrc.buffer.getChannelData(0).set(recorded.quantFloat);
+      recordedSrc.buffer.getChannelData(1).set(recorded.quantFloat);
+    }
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.9;
+    recordedSrc.connect(gain);
+    gain.connect(mainOut);
+    recordedSrc.start();
+  });
+
+  stopRecordedBtn.addEventListener('click', stopRecorded);
+  function stopRecorded() {
+    try { recordedSrc && recordedSrc.stop(); } catch {}
+    recordedSrc && recordedSrc.disconnect();
+    recordedSrc = null;
+  }
+
+  downloadWavBtn.addEventListener('click', () => {
+    if (!recorded) return;
+    // prepare WAV from quantized samples
+    const blob = (recorded.encoding.startsWith('μ-law'))
+      ? encodeWavFromULaw(recorded.ulaw, recorded.fs, recorded.ch)
+      : encodeWavFromPCM(recorded.quantFloat, recorded.fs, recorded.bitDepth, recorded.ch);
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `recorded_${recorded.fs}Hz_${recorded.encoding.replace(/\s+/g,'')}.wav`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  // ---------- Step 3: DAC reconstruction ----------
+  renderDACBtn.addEventListener('click', () => {
+    if (!audioCtx || !recorded) return;
+    stopDAC();
+
+    const method = dacMethodSel.value; // ZOH | Linear
+    const lpHz = parseFloat(dacLPInput.value);
+    const fsOut = audioCtx.sampleRate;
+    const fsIn  = recorded.fs;
+
+    const y = reconstructDAC(recorded.quantFloat, fsIn, fsOut, method);
+    const yLP = (lpHz > 0) ? onePoleLowpass(y, fsOut, lpHz) : y;
+
+    dacSrc = audioCtx.createBufferSource();
+    const buf = audioCtx.createBuffer(1, yLP.length, fsOut);
+    buf.getChannelData(0).set(yLP);
+    dacSrc.buffer = buf;
+    dacSrc.connect(dacGainNode);
+    dacSrc.start();
+
+    // Visual: connect analyser3 already in chain
+    startDrawLoop();
+  });
+
+  stopDACBtn.addEventListener('click', stopDAC);
+  dacGainInput.addEventListener('input', () => {
+    if (dacGainNode) dacGainNode.gain.setTargetAtTime(parseFloat(dacGainInput.value), audioCtx?.currentTime||0, 0.01);
+  });
+
+  function stopDAC() {
+    try { dacSrc && dacSrc.stop(); } catch {}
+    dacSrc && dacSrc.disconnect();
+    dacSrc = null;
+  }
+
+  // ---------- Core: Offline render from waves ----------
+  /**
+   * Renders the sum of user-defined waveforms to an OfflineAudioContext and returns its AudioBuffer.
+   * Supports phase via custom PeriodicWave (cos/sin tables). Band-limits harmonics to Nyquist.
+   */
+  async function renderOfflineFromWaves({ duration, sampleRate, waves, antiAliasMaxHarmonics = true, filter = null }) {
+    const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: Math.ceil(duration * sampleRate), sampleRate });
+
+    // Optional filter
+    let dest = ctx.destination;
+    if (filter && (filter.type === 'lowpass' || filter.type === 'highpass')) {
+      const biq = new BiquadFilterNode(ctx, { type: filter.type, frequency: clamp(filter.cutoff || 18000, 10, sampleRate/2 - 10), Q: 0.707 });
+      biq.connect(ctx.destination);
+      dest = biq;
+    }
+
+    // Build oscillators
+    waves.forEach(w => {
+      if (w.muted || w.amp <= 0) return;
+      const osc = new OscillatorNode(ctx, { type: 'sine', frequency: clamp(w.freq, 1, sampleRate/2 - 1) });
+      const gain = new GainNode(ctx, { gain: w.amp });
+      const pw = buildPeriodicWave(ctx, w.type, w.freq, w.phaseDeg, antiAliasMaxHarmonics);
+      if (pw) osc.setPeriodicWave(pw); else osc.type = w.type; // fallback to native type for 'sine'
+      osc.connect(gain).connect(dest);
+      osc.start(0);
+      osc.stop(duration);
+    });
+
+    const buf = await ctx.startRendering();
+    return buf;
+  }
+
+  /**
+   * Build a band-limited PeriodicWave for a given shape with a fundamental frequency and phase (degrees).
+   * Uses harmonic amplitude formulas and truncates at Nyquist.
+   */
+  function buildPeriodicWave(ctx, shape, f0, phaseDeg, limitHarmonics = true) {
+    const sr = ctx.sampleRate;
+    const kMax = limitHarmonics ? Math.max(1, Math.floor((sr/2 - 1) / Math.max(1, f0))) : 64;
+    const real = new Float32Array(kMax + 1);
+    const imag = new Float32Array(kMax + 1);
+    const phi = (phaseDeg || 0) * Math.PI / 180;
+
+    // Helper to set a sinusoid at harmonic k with magnitude A and phase phi
+    function addHarm(k, A) {
+      // A * sin(2π k f0 t + phi) = Im{ A·e^{j(phi)}·e^{j 2π k f0 t} }
+      // PeriodicWave wants cos/sin parts: real[k] = A*cos(phi), imag[k] = A*sin(phi)
+      real[k] += A * Math.cos(phi);
+      imag[k] += A * Math.sin(phi);
+    }
+
+    switch (shape) {
+      case 'sine': {
+        addHarm(1, 1.0);
+        break;
+      }
+      case 'square': {
+        // x(t) = (4/π) * sum_{n odd} (1/n) * sin(2π n f0 t + phi)
+        const scale = 4/Math.PI;
+        for (let n=1, k=1; n<=kMax; n+=2, k=n) {
+          addHarm(k, scale * (1/k));
+        }
+        break;
+      }
+      case 'triangle': {
+        // x(t) = (8/π^2) * sum_{n odd} ((-1)^{(n-1)/2} / n^2) * sin(2π n f0 t + phi)
+        const scale = 8/(Math.PI*Math.PI);
+        for (let n=1; n<=kMax; n+=2) {
+          const sign = ((n-1)/2) % 2 === 0 ? 1 : -1;
+          addHarm(n, scale * sign * (1/(n*n)));
+        }
+        break;
+      }
+      case 'sawtooth': {
+        // x(t) = (2/π) * sum_{n=1..∞} (-1)^{n+1} (1/n) * sin(2π n f0 t + phi)
+        const scale = 2/Math.PI;
+        for (let n=1; n<=kMax; n++) {
+          const sign = ((n+1) % 2 === 0) ? 1 : -1;
+          addHarm(n, scale * sign * (1/n));
+        }
+        break;
+      }
+      default: {
+        // fallback to native shape if available
+        if (shape === 'sine' || shape === 'square' || shape === 'triangle' || shape === 'sawtooth') {
+          return null;
+        }
+        addHarm(1, 1.0);
+      }
+    }
+    return new PeriodicWave(ctx, { real, imag, disableNormalization: false });
+  }
+
+  // ---------- Quantization & Compression ----------
+  function quantizeBuffer(xFloat, { bits, dither=false, compression='None' }) {
+    const N = xFloat.length;
+    const qFloat = new Float32Array(N);
+    const errFloat = new Float32Array(N);
+    let pcm = null;
+    let ulaw = null;
+
+    if (compression.startsWith('μ')) {
+      // μ-law 8-bit companding (G.711), μ=255, range [-1,1]
+      ulaw = new Uint8Array(N);
+      for (let i=0; i<N; i++) {
+        const x = clamp(xFloat[i], -1, 1);
+        const sign = x < 0 ? -1 : 1;
+        const mu = 255;
+        const y = sign * (Math.log(1 + mu * Math.abs(x)) / Math.log(1 + mu));
+        // map to [0,255]
+        const val = Math.round((y + 1) * 127.5);
+        ulaw[i] = clamp(val, 0, 255);
+        // decode for listening/metrics (so qFloat holds reconstructed)
+        const yDec = ((ulaw[i] / 127.5) - 1);
+        const xRec = signMuLawInverse(yDec, mu);
+        qFloat[i] = xRec;
+        errFloat[i] = x - xRec;
+      }
+      pcm = ulaw; // stored as 8-bit values
+      return { qFloat, errFloat, pcm, encLabel: 'μ-law8', ulaw };
+    }
+
+    // Linear PCM
+    const peak = Math.pow(2, bits - 1) - 1; // e.g., 32767
+    const step = 1 / peak; // quantization step in normalized float units
+    let arr;
+    if (bits === 8) arr = new Int8Array(N);
+    else if (bits === 16) arr = new Int16Array(N);
+    else arr = new Int32Array(N); // we will pack 24-bit later when exporting WAV
+
+    for (let i=0; i<N; i++) {
+      let v = clamp(xFloat[i], -1, 1);
+      if (dither) {
+        // TPDF dither: add (U1 + U2 - 1) * step
+        v += (Math.random() + Math.random() - 1) * step;
+        v = clamp(v, -1, 1);
+      }
+      // quantize
+      const q = Math.round(v * peak);
+      arr[i] = q; // integer
+      const qv = q / peak;
+      qFloat[i] = qv;
+      errFloat[i] = v - qv;
+    }
+    pcm = arr;
+    return { qFloat, errFloat, pcm, encLabel: `${bits}-bit PCM`, ulaw: null };
+  }
+
+  function signMuLawInverse(y, mu) {
+    // y in [-1,1], mu=255
+    const sign = (y < 0) ? -1 : 1;
+    const ay = Math.abs(y);
+    const x = sign * ((Math.pow(1 + mu, ay) - 1) / mu);
+    return clamp(x, -1, 1);
+  }
+
+  function computeSNR(x, y) {
+    // x: original float [-1,1]; y: reconstructed/quantized float; SNR in dB
+    let pSig = 0, pErr = 0;
+    const N = x.length;
+    for (let i=0; i<N; i++) {
+      const s = x[i];
+      const e = x[i] - y[i];
+      pSig += s*s;
+      pErr += e*e;
+    }
+    if (pErr <= 1e-20) return Infinity;
+    return 10 * Math.log10(pSig / pErr);
+  }
+
+  // ---------- DAC Reconstruction ----------
+  function reconstructDAC(q, fsIn, fsOut, methodLabel) {
+    const duration = q.length / fsIn;
+    const Nout = Math.floor(duration * fsOut);
+    const y = new Float32Array(Nout);
+    const linear = methodLabel.startsWith('Linear');
+
+    for (let i=0; i<Nout; i++) {
+      const t = i / fsOut;
+      const n = t * fsIn;
+      const n0 = Math.floor(n);
+      const frac = n - n0;
+      if (n0 < 0 || n0 >= q.length) { y[i] = 0; continue; }
+      if (!linear || n0 === q.length - 1) {
+        y[i] = q[n0];
+      } else {
+        const n1 = n0 + 1;
+        y[i] = q[n0] * (1 - frac) + q[n1] * frac;
+      }
+    }
+    return y;
+  }
+
+  function onePoleLowpass(x, fs, cutoff) {
+    const y = new Float32Array(x.length);
+    const dt = 1 / fs;
+    const RC = 1 / (2 * Math.PI * cutoff);
+    const alpha = dt / (RC + dt);
+    let prev = 0;
+    for (let i=0; i<x.length; i++) {
+      prev = prev + alpha * (x[i] - prev);
+      y[i] = prev;
+    }
+    return y;
+  }
+
+  // ---------- WAV encoding ----------
+  function encodeWavFromPCM(floatData, sampleRate, bits, channels=1) {
+    // Interleave (if stereo: duplicate mono to R), then pack PCM
+    const N = floatData.length;
+    const ch = channels;
+    const interleaved = new Float32Array(N * ch);
+    if (ch === 1) {
+      interleaved.set(floatData);
+    } else {
+      for (let i=0; i<N; i++) {
+        const v = floatData[i];
+        interleaved[2*i] = v;
+        interleaved[2*i+1] = v;
+      }
+    }
+
+    // Create buffer with WAV header
+    const bytesPerSample = (bits === 24) ? 3 : (bits === 16 ? 2 : 1);
+    const blockAlign = ch * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = interleaved.length * bytesPerSample;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    // RIFF header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+    // fmt chunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // PCM fmt chunk length
+    view.setUint16(20, 1, true);  // PCM format
+    view.setUint16(22, ch, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bits, true);
+    // data chunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // Write samples
+    let offset = 44;
+    if (bits === 16) {
+      for (let i=0; i<interleaved.length; i++) {
+        const s = clamp(interleaved[i], -1, 1);
+        view.setInt16(offset, Math.round(s * 32767), true);
+        offset += 2;
+      }
+    } else if (bits === 24) {
+      for (let i=0; i<interleaved.length; i++) {
+        const s = clamp(interleaved[i], -1, 1);
+        const v = Math.round(s * 8388607); // 2^23 - 1
+        view.setUint8(offset+0, (v & 0xFF));        // little-endian 24-bit
+        view.setUint8(offset+1, (v >> 8) & 0xFF);
+        view.setUint8(offset+2, (v >> 16) & 0xFF);
+        offset += 3;
+      }
+    } else { // 8-bit unsigned PCM
+      for (let i=0; i<interleaved.length; i++) {
+        const s = clamp(interleaved[i], -1, 1);
+        const v = Math.round((s * 0.5 + 0.5) * 255);
+        view.setUint8(offset, v);
+        offset += 1;
+      }
+    }
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+
+  function encodeWavFromULaw(ulawBytes, sampleRate, channels=1) {
+    // μ-law is usually stored as 8-bit "PCM" with format code 7 (G.711 μ-law).
+    const N = ulawBytes.length;
+    const ch = channels;
+    const interleaved = (ch === 1) ? ulawBytes : (() => {
+      const out = new Uint8Array(N * 2);
+      for (let i=0; i<N; i++) { const v = ulawBytes[i]; out[2*i] = v; out[2*i+1] = v; }
+      return out;
+    })();
+
+    const bytesPerSample = 1;
+    const blockAlign = ch * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = interleaved.length;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    // RIFF
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+    // fmt
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 18, true);    // fmt chunk size for non-PCM
+    view.setUint16(20, 7, true);     // format code 7 = μ-law
+    view.setUint16(22, ch, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 8, true);     // bits per sample (8)
+    view.setUint16(36, 0, true);     // cbSize (extra size) = 0
+    // data
+    writeString(view, 38, 'data');
+    view.setUint32(42, dataSize, true);
+
+    // Note: above offsets are shifted because fmt size=18; we used an adjusted layout for simplicity
+    // Safer approach: rewrite chunks more carefully:
+    const safe = new ArrayBuffer(44 + dataSize);
+    const v2 = new DataView(safe);
+    writeString(v2, 0, 'RIFF');
+    v2.setUint32(4, 36 + dataSize, true);
+    writeString(v2, 8, 'WAVE');
+    writeString(v2, 12, 'fmt ');
+    v2.setUint32(16, 18, true);
+    v2.setUint16(20, 7, true);
+    v2.setUint16(22, ch, true);
+    v2.setUint32(24, sampleRate, true);
+    v2.setUint32(28, byteRate, true);
+    v2.setUint16(32, blockAlign, true);
+    v2.setUint16(34, 8, true);
+    v2.setUint16(36, 0, true);
+    writeString(v2, 38, 'data');
+    v2.setUint32(42, dataSize, true);
+    let off = 46; // 44 + 2? Our fmt had 2 extra bytes; place data at 46 to match header writes above
+    // Simpler: write at offset 44 directly
+    off = 44;
+    for (let i=0; i<interleaved.length; i++) v2.setUint8(off + i, interleaved[i]);
+    return new Blob([safe], { type: 'audio/wav' });
+  }
+
+  function writeString(view, offset, str) {
+    for (let i=0; i<str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+
+  // ---------- Visualization ----------
+  let drawRAF = null;
+  function startDrawLoop() {
+    if (!audioCtx) return;
+    cancelAnimationFrame(drawRAF);
+
+    const scope1Ctx = scope1.getContext('2d');
+    const spec1Ctx  = spec1.getContext('2d');
+    const scope3Ctx = scope3.getContext('2d');
+    const spec3Ctx  = spec3.getContext('2d');
+
+    const tBuf = new Float32Array(analyser1.fftSize);
+    const fBuf = new Uint8Array(analyser1.frequencyBinCount);
+    const tBuf3 = new Float32Array(analyser3.fftSize);
+    const fBuf3 = new Uint8Array(analyser3.frequencyBinCount);
+
+    function draw() {
+      // Step 1 time
+      if (analyser1) {
+        analyser1.getFloatTimeDomainData(tBuf);
+        drawTime(scope1Ctx, scope1, tBuf);
+        analyser1.getByteFrequencyData(fBuf);
+        drawSpectrum(spec1Ctx, spec1, fBuf);
+      }
+      // Step 3 time / freq
+      if (analyser3) {
+        analyser3.getFloatTimeDomainData(tBuf3);
+        drawTime(scope3Ctx, scope3, tBuf3);
+        analyser3.getByteFrequencyData(fBuf3);
+        drawSpectrum(spec3Ctx, spec3, fBuf3);
+      }
+      drawRAF = requestAnimationFrame(draw);
+    }
+    draw();
+  }
+
+  function drawTime(ctx, canvas, arr) {
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    // handle high-DPI
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = '#98c379';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const mid = H/2;
+    for (let i=0; i<arr.length; i++) {
+      const x = i / (arr.length-1) * W;
+      const y = mid - arr[i] * (H*0.45);
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    // Midline
+    ctx.strokeStyle = 'rgba(170,170,170,0.2)';
+    ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(W,mid); ctx.stroke();
+  }
+
+  function drawSpectrum(ctx, canvas, bins) {
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    ctx.clearRect(0,0,W,H);
+    const n = bins.length;
+    const barW = W / n;
+    ctx.fillStyle = '#56b6c2';
+    for (let i=0; i<n; i++) {
+      const v = bins[i] / 255; // 0..1
+      const h = v * H;
+      ctx.fillRect(i * barW, H - h, Math.max(1, barW - 1), h);
+    }
+  }
+
+  function drawArrayToScope(canvas, arr, fs) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = '#e5c07b';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    const mid = H/2;
+    const N = arr.length;
+    const step = Math.max(1, Math.floor(N / W)); // decimate for canvas
+    let idx = 0, first = true;
+    for (let x=0; x<W; x++) {
+      const i = Math.min(N-1, idx);
+      const y = mid - arr[i] * (H*0.45);
+      if (first) { ctx.moveTo(x,y); first=false; } else ctx.lineTo(x,y);
+      idx += step;
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(170,170,170,0.2)';
+    ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(W,mid); ctx.stroke();
+  }
+
+  // ---------- Auto preview regeneration ----------
+  let regenTimer = null;
+  function schedulePreview(immediate=false) {
+    if (!audioCtx) return;
+    if (regenTimer) clearTimeout(regenTimer);
+    regenTimer = setTimeout(() => generatePreviewAndPlay(), immediate ? 0 : 250);
+  }
+
+  // ---------- Bootstrapping ----------
+  addWave({ type:'sine', amp:0.6, freq:440, phaseDeg:0 });
+  renderWaves();
+
+})();
+</script>
+</body>
+</html>
