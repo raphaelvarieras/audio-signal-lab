@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Syntax</title>
+</head>
+<body>
+    <h1>Testing JavaScript Syntax</h1>
+    <div id="result"></div>
+    
+    <script>
+        const result = document.getElementById('result');
+        
+        // Test if we can load the module
+        import('./js/main.js')
+            .then(() => {
+                result.innerHTML = '<p style="color: green;">✅ main.js loaded successfully!</p>';
+                result.innerHTML += '<p>Check console for any additional messages.</p>';
+            })
+            .catch(error => {
+                result.innerHTML = '<p style="color: red;">❌ Error loading main.js:</p>';
+                result.innerHTML += '<pre style="color: red; background: #f0f0f0; padding: 10px;">' + error.message + '</pre>';
+                result.innerHTML += '<pre style="color: red; background: #f0f0f0; padding: 10px;">' + error.stack + '</pre>';
+                console.error('Full error:', error);
+            });
+    </script>
+</body>
+</html>
